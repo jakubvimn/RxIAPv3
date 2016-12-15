@@ -30,7 +30,6 @@ import android.os.RemoteException;
 import android.text.TextUtils;
 import android.util.Log;
 
-
 import com.android.vending.billing.IInAppBillingService;
 import com.bluelinelabs.logansquare.LoganSquare;
 import com.orhanobut.hawk.Hawk;
@@ -50,11 +49,13 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 
-import rx.Observable;
-import rx.Subscriber;
-import rx.functions.Func0;
-import rx.functions.Func1;
+import io.reactivex.Observable;
+import io.reactivex.ObservableEmitter;
+import io.reactivex.ObservableOnSubscribe;
+import io.reactivex.functions.Function;
+import io.reactivex.functions.Predicate;
 
 public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
@@ -177,7 +178,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<Boolean> isInitializedObservable() {
-        return Observable.fromCallable(new Func0<Boolean>() {
+        return Observable.fromCallable(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return billingService != null;
@@ -192,7 +193,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<Boolean> isPurchasedObservable(final String productId) {
-        return Observable.fromCallable(new Func0<Boolean>() {
+        return Observable.fromCallable(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return cachedProducts.includesProduct(productId);
@@ -207,7 +208,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<Boolean> isSubscribedObservable(final String productId) {
-        return Observable.fromCallable(new Func0<Boolean>() {
+        return Observable.fromCallable(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return cachedSubscriptions.includesProduct(productId);
@@ -222,7 +223,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<List<String>> listOwnedProductsObservable() {
-        return Observable.fromCallable(new Func0<List<String>>() {
+        return Observable.fromCallable(new Callable<List<String>>() {
             @Override
             public List<String> call() {
                 return cachedProducts.getProductIds();
@@ -237,7 +238,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<List<String>> listOwnedSubscriptionsObservable() {
-        return Observable.fromCallable(new Func0<List<String>>() {
+        return Observable.fromCallable(new Callable<List<String>>() {
             @Override
             public List<String> call() {
                 return cachedSubscriptions.getProductIds();
@@ -252,7 +253,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<List<PurchaseDataModel>> ownedProductsTransactionDetailsObservable() {
-        return Observable.fromCallable(new Func0<List<PurchaseDataModel>>() {
+        return Observable.fromCallable(new Callable<List<PurchaseDataModel>>() {
             @Override
             public List<PurchaseDataModel> call() {
                 return cachedProducts.getProducts();
@@ -267,7 +268,7 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<List<PurchaseDataModel>> ownedSubscriptionsTransactionDetailsObservable() {
-        return Observable.fromCallable(new Func0<List<PurchaseDataModel>>() {
+        return Observable.fromCallable(new Callable<List<PurchaseDataModel>>() {
             @Override
             public List<PurchaseDataModel> call() {
                 return cachedSubscriptions.getProducts();
@@ -415,10 +416,10 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     @Override
     public Observable<ConsumeModel> consumePurchaseObservable(final String productId) {
-        return Observable.create(new Observable.OnSubscribe<ConsumeModel>() {
-            @Override
-            public void call(Subscriber<? super ConsumeModel> subscriber) {
 
+        return Observable.create(new ObservableOnSubscribe<ConsumeModel>() {
+            @Override
+            public void subscribe(ObservableEmitter<ConsumeModel> subscriber) {
                 loadManagedProductsFromGoogle();
 
                 ConsumeModel.ConsumeModelBuilder consumeModelBuilder =
@@ -427,19 +428,16 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                 if(!isInitialized()){
                     consumeModelBuilder.setErrorCode(Constants.BILLING_PROCESSOR_NOT_INITIALIZED);
                     consumeModelBuilder.setErrorMessage(ErrorMessages.BILLING_PROCESSOR_IS_NOT_INITIALIZED);
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new ConsumeModel(consumeModelBuilder));
-                        subscriber.onCompleted();
-                    }
+
+                    subscriber.onNext(new ConsumeModel(consumeModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 if(TextUtils.isEmpty(productId)){
                     consumeModelBuilder.setErrorCode(Constants.PRODUCT_ID_IS_EMPTY);
                     consumeModelBuilder.setErrorMessage(ErrorMessages.PRODUCT_ID_IS_EMPTY);
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new ConsumeModel(consumeModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new ConsumeModel(consumeModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 try {
@@ -466,31 +464,24 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                         if (response == Constants.BILLING_RESPONSE_RESULT_OK) {
                             cachedProducts.remove(productId);
                             consumeModelBuilder.setPurchaseDataModel(purchaseDataModel);
-                            if(!subscriber.isUnsubscribed()){
-                                subscriber.onNext(new ConsumeModel(consumeModelBuilder));
-                                subscriber.onCompleted();
-                            }
+                            subscriber.onNext(new ConsumeModel(consumeModelBuilder));
+                            subscriber.onComplete();
                             Log.e(LOG_TAG, "Successfully consumed " + productId + " purchase.");
                         } else {
                             consumeModelBuilder.setErrorCode(response);
-                            if(!subscriber.isUnsubscribed()){
-                                subscriber.onNext(new ConsumeModel(consumeModelBuilder));
-                                subscriber.onCompleted();
-                            }
+                            subscriber.onNext(new ConsumeModel(consumeModelBuilder));
+                            subscriber.onComplete();
                             Log.e(LOG_TAG, String.format("Failed to consume %s: error %d", productId, response));
                         }
                     }else{
                         if(purchaseDataModel != null && TextUtils.isEmpty(purchaseDataModel.getPurchaseToken())){
                             consumeModelBuilder.setErrorCode(Constants.PRODUCT_FOR_CONSUME_WAS_NOT_FOUND);
                             consumeModelBuilder.setErrorMessage(ErrorMessages.PRODUCT_FOR_CONSUME_WAS_NOT_FOUND);
-                            if(!subscriber.isUnsubscribed()){
-                                subscriber.onNext(new ConsumeModel(consumeModelBuilder));
-                                subscriber.onCompleted();
-                            }
+                            subscriber.onNext(new ConsumeModel(consumeModelBuilder));
+                            subscriber.onComplete();
                         }
                     }
-                    if(!subscriber.isUnsubscribed())
-                        subscriber.onCompleted();
+                    subscriber.onComplete();
                 } catch (RemoteException e) {
                     Log.e(LOG_TAG, e.toString());
                     subscriber.onError(e);
@@ -581,24 +572,24 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
         ArrayList<String> productIdList = new ArrayList<>();
         productIdList.add(productId);
         return getSkuDetailsObservable(productIdList, purchaseType)
-                .filter(new Func1<DetailsModel, Boolean>() {
+                .filter(new Predicate<DetailsModel>() {
                     @Override
-                    public Boolean call(DetailsModel detailsModel) {
+                    public boolean test(DetailsModel detailsModel) {
                         return detailsModel.isSuccess();
                     }
                 })
-                .flatMap(new Func1<DetailsModel, Observable<SkuDetails>>() {
+                .flatMap(new Function<DetailsModel, Observable<SkuDetails>>() {
                     @Override
-                    public Observable<SkuDetails> call(DetailsModel detailsModel) {
+                    public Observable<SkuDetails> apply(DetailsModel detailsModel) {
                         return Observable.just(detailsModel.getSkuDetailsList().get(0));
                     }
                 });
     }
 
     private Observable<DetailsModel> getSkuDetailsObservable(final ArrayList<String> productIdList, final String purchaseType){
-        return Observable.create(new Observable.OnSubscribe<DetailsModel>() {
+        return Observable.create(new ObservableOnSubscribe<DetailsModel>() {
             @Override
-            public void call(Subscriber<? super DetailsModel> subscriber) {
+            public void subscribe(ObservableEmitter<DetailsModel> subscriber) {
 
                 DetailsModel.DetailsModelBuilder detailsModelBuilder
                         = new DetailsModel.DetailsModelBuilder();
@@ -606,28 +597,22 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                 if(billingService == null){
                     detailsModelBuilder.setErrorCode(Constants.BILLING_SERVICE_IS_NULL);
                     detailsModelBuilder.setErrorMessage(ErrorMessages.BILLING_SERVICE_IS_NULL);
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new DetailsModel(detailsModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new DetailsModel(detailsModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 if(productIdList == null){
                     detailsModelBuilder.setErrorCode(Constants.PRODUCTS_LIST_IS_NULL);
                     detailsModelBuilder.setErrorMessage(ErrorMessages.PRODUCTS_LIST_IS_NULL);
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new DetailsModel(detailsModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new DetailsModel(detailsModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 if (productIdList != null && productIdList.size() == 0) {
                     detailsModelBuilder.setErrorCode(Constants.PRODUCTS_LIST_IS_EMPTY);
                     detailsModelBuilder.setErrorMessage(ErrorMessages.PRODUCTS_LIST_IS_EMPTY);
-                    if (!subscriber.isUnsubscribed()) {
-                        subscriber.onNext(new DetailsModel(detailsModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new DetailsModel(detailsModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 try {
@@ -650,15 +635,11 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                     } else {
                         detailsModelBuilder.setErrorCode(response);
                     }
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new DetailsModel(detailsModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new DetailsModel(detailsModelBuilder));
+                    subscriber.onComplete();
                 } catch (Exception e) {
                     Log.e(LOG_TAG, String.format("Failed to call getSkuDetails %s", e.toString()));
-                    if(subscriber.isUnsubscribed()){
-                        subscriber.onError(e);
-                    }
+                    subscriber.onError(e);
                 }
 
             }
@@ -766,10 +747,10 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
     private Observable<PurchaseModel> purchaseObservable(final Activity activity, final String productId, final String purchaseType){
 
-        return Observable.create(new Observable.OnSubscribe<PurchaseModel>(){
+        return Observable.create(new ObservableOnSubscribe<PurchaseModel>(){
 
             @Override
-            public void call(Subscriber<? super PurchaseModel> subscriber) {
+            public void subscribe(ObservableEmitter<PurchaseModel> subscriber) {
 
                 PurchaseModel.PurchaseModelBuilder purchaseModelBuilder
                         = new PurchaseModel.PurchaseModelBuilder();
@@ -790,10 +771,8 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                         purchaseModelBuilder.setErrorMessage(ErrorMessages.PURCHASE_TYPE_IS_EMPTY);
                     }
 
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                        subscriber.onCompleted();
-                    }
+                    subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
+                    subscriber.onComplete();
                 }
 
                 String purchasePayload = purchaseType + ":" + UUID.randomUUID();
@@ -816,11 +795,11 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                             if (activity != null && pendingIntent != null)
                                 activity.startIntentSenderForResult(pendingIntent.getIntentSender(),
                                         PURCHASE_FLOW_REQUEST_CODE, new Intent(), 0, 0, 0);
-                            else if(!subscriber.isUnsubscribed()){
+                            else {
                                 //We lost context so we inform the subscriber to complete with an error
                                 purchaseModelBuilder.setErrorCode(Constants.BILLING_ERROR_LOST_CONTEXT);
                                 subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                                subscriber.onCompleted();
+                                subscriber.onComplete();
                             }
 
                         } else if (response == Constants.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
@@ -836,36 +815,31 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
 
                             if (!checkMerchant(details)) {
                                 Log.e(LOG_TAG, "Invalid or tampered merchant id!");
-                                if (!subscriber.isUnsubscribed()){
-
-                                    //Purchase request might be tampered. We inform the subscriber about it.
-                                    purchaseModelBuilder.setErrorCode(Constants.BILLING_ERROR_INVALID_MERCHANT_ID);
-                                    purchaseModelBuilder.setErrorMessage(ErrorMessages.BILLING_ERROR_INVALID_MERCHANT_ID);
-                                    subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                                    subscriber.onCompleted();
-                                }
-                            }
-                            if (!subscriber.isUnsubscribed()) {
-
-                                if (details == null)
-                                    details = cachedSubscriptions.getDetails(productId);
-
-                                //Item was purchase successfully. We return the transaction details
-                                //and productId back to the subscriber
-                                purchaseModelBuilder.setPurchaseDataModel(details);
-                                purchaseModelBuilder.setErrorCode(Constants.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED);
-                                purchaseModelBuilder.setErrorMessage(ErrorMessages.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED);
+                                //Purchase request might be tampered. We inform the subscriber about it.
+                                purchaseModelBuilder.setErrorCode(Constants.BILLING_ERROR_INVALID_MERCHANT_ID);
+                                purchaseModelBuilder.setErrorMessage(ErrorMessages.BILLING_ERROR_INVALID_MERCHANT_ID);
                                 subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                                subscriber.onCompleted();
+                                subscriber.onComplete();
                             }
 
-                        } else if (!subscriber.isUnsubscribed()){
+                            if (details == null)
+                                details = cachedSubscriptions.getDetails(productId);
+
+                            //Item was purchase successfully. We return the transaction details
+                            //and productId back to the subscriber
+                            purchaseModelBuilder.setPurchaseDataModel(details);
+                            purchaseModelBuilder.setErrorCode(Constants.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED);
+                            purchaseModelBuilder.setErrorMessage(ErrorMessages.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED);
+                            subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
+                            subscriber.onComplete();
+
+                        } else {
 
                             //We failed to initialize the purchase. We inform the subscriber about it.
                             purchaseModelBuilder.setErrorCode(Constants.BILLING_ERROR_FAILED_TO_INITIALIZE_PURCHASE);
                             purchaseModelBuilder.setErrorMessage(ErrorMessages.BILLING_ERROR_FAILED_TO_INITIALIZE_PURCHASE);
                             subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                            subscriber.onCompleted();
+                            subscriber.onComplete();
                         }
 
                     }else{
@@ -873,14 +847,12 @@ public class BillingProcessor extends BillingBase implements IBillingProcessor{
                         purchaseModelBuilder.setErrorCode(Constants.BUNDLE_NULL_FROM_GOOGLE);
                         purchaseModelBuilder.setErrorMessage(ErrorMessages.BUNDLE_NULL_FROM_GOOGLE);
                         subscriber.onNext(new PurchaseModel(purchaseModelBuilder));
-                        subscriber.onCompleted();
+                        subscriber.onComplete();
                     }
                 }catch(RemoteException | IntentSender.SendIntentException e){
                     e.printStackTrace();
                     //Something got totally fcked up.
-                    if(!subscriber.isUnsubscribed()){
-                        subscriber.onError(e);
-                    }
+                    subscriber.onError(e);
                 }
             }
         });

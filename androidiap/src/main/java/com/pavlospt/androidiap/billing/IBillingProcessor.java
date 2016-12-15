@@ -1,7 +1,6 @@
 package com.pavlospt.androidiap.billing;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
 
 import com.pavlospt.androidiap.models.ConsumeModel;
@@ -14,7 +13,7 @@ import com.pavlospt.androidiap.models.TransactionDetails;
 import java.util.ArrayList;
 import java.util.List;
 
-import rx.Observable;
+import io.reactivex.Observable;
 
 /**
  * Copyright 2015 Pavlos-Petros Tournaris
